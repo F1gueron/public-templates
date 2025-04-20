@@ -70,11 +70,9 @@ From this we see the affine cipher: out = (in * 23 + 60) mod 256. Our goal is to
 
 A little summary of all the interesting things we have found out so far:
 
-    The binary enforces exactly 12 characters.
-
-    It uses an LCT (not XOR) with multiplier 23 and increment 60.
-
-    The table bytes correspond to a printable flag in the form HTB{…}.
+1. The binary enforces exactly 12 characters.
+2. It uses an LCT (not XOR) with multiplier 23 and increment 60.
+3. The table bytes correspond to a printable flag in the form HTB{…}.
 
 # Solution 
 ## Finding the vulnerability 
@@ -94,8 +92,7 @@ r.recvuntil("manager code: ")
 r.sendline(flag)
 print(r.recvline())
 
-    Compute modular inverse of 23 mod 256 (via extended Euclid):
-
+# Compute modular inverse of 23 mod 256 (via extended Euclid):
 # extended gcd to find inverse
 def egcd(a, b):
     if b == 0: return (a,1,0)
