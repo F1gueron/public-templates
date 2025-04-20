@@ -1,112 +1,124 @@
-![img](assets/banner.png)
+<img src='assets/banner.png' style='width:100%;' />
 
-<img src='assets/htb.png' style='zoom: 80%;' align=left /> <font size='10'><Challenge_Name></font>
+<img src='assets/htb.png' style='zoom: 80%;' align=left /> <font size='10'>Manager Code Validator</font>
 
-1<sup>st</sup> August 2023
+20 April 2025
 
-Prepared By: `<author_name>`
+Prepared By: `Figueron`
 
-Challenge Author(s): `<author_name>`
+Challenge Author(s): `Figueron`
 
-Difficulty: <font color='orange'>Medium</font>
+Difficulty: <font color='green'>Easy</font>
 
 <br><br>
 
-***NOTE : The headings with `(!)` should be necessarily included in your writeup while the ones with `(*)` are optional and should be included only if there is a need to. Of course, you can modify the content of each section accordingly. We just provide some boilerplate text.***
 
-# Synopsis (!)
+# Synopsis 
 
-- Briefly explain what the user must do to solve this challenge.
+- You’re part of a red‑team engagement targeting a financial services firm. During your internal network pivot, you discover an ELF binary called manager_check on a payments server. The application prompts for a 12‑character manager code before approving high‑value transactions. The client has lost track of the original code, and you’ve been asked to recover it by reversing the binary locally.
+## Description 
+You are given manager_check, a no‑PIE, no‑canary ELF executable.
+On execution it prints a banner and prompts:
+```
+Welcome to Manager Code Validator!
+Enter the manager code:
+```
+If your 12‑byte input, when transformed via (c*23 + 60) mod 256, matches the embedded table, it prints:
+```
+Access granted! Code accepted: <your input>
+```
+Otherwise, it rejects you with “Access denied.”
+The flag format is HTB{…} and is exactly 12 characters long.
 
-## Description (!)
+## Skills Required 
+- Basic C/C++ reading
+- Familiarity with Ghidra/IDA for static disassembly
+- Understanding of modular arithmetic and the extended Euclidean algorithm
+- Python scripting for quick de‑encryption
 
-- ...
+## Skills Learned
+1. How to spot and reverse an affine/linear congruential transform on bytes
+2. Computing modular inverses modulo 256 via the extended Euclidean algorithm
+3. Integrating a simple Python one‑liner into a pwn script
 
-## Skills Required (!)
+# Enumeration
+- Running `file manager_check` shows a 64‑bit ELF, no PIE, no stack protector.
+- `strings` manager_check reveals references to table, MUL, and ADD.
+- Loading into Ghidra and navigating to main() uncovers the 12‑byte table and the two constants.
 
-- Python
-- Researching Skills
-- C/C++
-- Know how to use common RE tools (i.e. Ghidra, IDA)
-- ...
+## Analyzing the source code
+No source is shipped, but in Ghidra’s decompiler the core looks like:
+```
+const unsigned char table[12] = {
+    0xB4,0xC8,0x2A,0x49,
+    0x27,0x35,0x38,0xA3,
+    0x1E,0xD1,0x7A,0x77
+};
+const unsigned char MUL = 23;
+const unsigned char ADD = 60;
 
-## Skills Learned (!)
-
-- Learn how SQLi works.
-- Learn how to unpack executables.
-- Learn how to solve linear systems of equations.
-- ...
-
-# Enumeration (!)
-
-## Analyzing the source code (*)
-
-- Explain what source files you are provided with when you unzip the challenge zip file.
-
-Analyze the source files as much as you can so it is clear what the challenge is about.
-
-...
-
-If we look at `source.py`, we can see that our goal is:
-
-- Specify the goal of the challenge (i.e. where the flag is and how it can be accessed)
-- ...
-
-The basic workflow of the script is as follows:
-
-1. Method `test()` is called which then calls `test1()`
-2. `test1()` creates an object of the `XXX` class which initializes `YYY`.
-3. ...
+for (i = 0; i < 12; i++) {
+    if ((input[i]*MUL + ADD & 0xFF) != table[i]) {
+        puts("Access denied.");
+        return 0;
+    }
+}
+puts("Access granted! Code accepted: ");
+puts(input);
+```
+From this we see the affine cipher: out = (in * 23 + 60) mod 256. Our goal is to invert that.
 
 A little summary of all the interesting things we have found out so far:
 
-1. The PHP query handler does not use prepared statements.
-2. The RSA modulo is generated with a non-standard way.
-3. ...
+    The binary enforces exactly 12 characters.
 
-# Solution (!)
+    It uses an LCT (not XOR) with multiplier 23 and increment 60.
 
-## Finding the vulnerability (*)
+    The table bytes correspond to a printable flag in the form HTB{…}.
 
-Explain where the vulnerability is. Be as detailed as possible so there are no logical gaps as to how you figured out the vulnerability and how you will proceed to the solution.
+# Solution 
+## Finding the vulnerability 
 
-## Exploitation (!)
-
-### Connecting to the server (*)
-
-Here is some boilerplate code for connecting to a docker-based challenge:
-
-```python
-if __name__ == "__main__":
-    r = remote("0.0.0.0", 1337)
-    pwn()
+The validation function implements an affine transform rather than a XOR. Every input byte c is checked against `table[i] == (c*23 + 60) % 256`. Since 23 and 256 are coprime, we can compute the modular inverse of 23 modulo 256 and reverse the equation:
 ```
-
-Let us consider our attack scenario.
-
-1. ...
-2. ...
-3. ...
-
-The attack explained above can be implemented with the following code:
-
-```python
-def important_function_that_does_something(param1, param2):
-    <function_body>
+c ≡ ((table[i] - 60) * inv23) mod 256
 ```
+This arithmetic flaw (use of a reversible bijection) means the secret code is recoverable in full once you identify MUL and ADD.
 
-### Getting the flag (!)
-
-A final summary of all that was said above:
-
-1.
-2.
-
-This recap can be represented by code using `pwn()` function:
-
-```python
-def pwn():
-    pass
+# Exploitation 
 ```
+from pwn import *
 
-Avoid writing any function body here. Make sure you have written them under `Exploitation` or `Finding the vulnerability` sections.
+r = remote("challenge.host", 1337)
+r.recvuntil("manager code: ")
+r.sendline(flag)
+print(r.recvline())
+
+    Compute modular inverse of 23 mod 256 (via extended Euclid):
+
+# extended gcd to find inverse
+def egcd(a, b):
+    if b == 0: return (a,1,0)
+    g, x1, y1 = egcd(b, a % b)
+    return (g, y1, x1 - (a//b)*y1)
+
+g, inv23, _ = egcd(23, 256)
+inv23 %= 256  # yields 167
+
+# Invert each table byte:
+
+table = [0xB4,0xC8,0x2A,0x49,0x27,0x35,0x38,0xA3,0x1E,0xD1,0x7A,0x77]
+flag = "".join(
+    chr(((b - 60) & 0xFF) * inv23 % 256)
+    for b in table
+)
+print(flag)  # → HTB{Mod1n3r}
+```
+Submit HTB{Mod1n3r} to the binary:
+```
+    $ ./manager_check
+    Welcome to Manager Code Validator!
+    Enter the manager code: HTB{Mod1n3r}
+    Access granted! Code accepted: HTB{Mod1n3r}
+```
+Flag: `HTB{Mod1n3r}`
